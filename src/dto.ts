@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsInt,
   IsLatitude,
+  IsArray,
   IsLongitude,
   IsOptional,
   IsString,
@@ -11,6 +12,8 @@ import {
   Max,
   Min,
   MinLength,
+  ArrayMaxSize,
+  ValidateNested,
 } from 'class-validator';
 import {
   CompetitionRequestStatus,
@@ -72,6 +75,14 @@ export class CompeteDto {
 }
 export class CompetitionDecisionDto {
   @IsEnum(CompetitionRequestStatus) status!: CompetitionRequestStatus;
+}
+export class MatchGoalDto {
+  @IsString() teamId!: string;
+  @IsString() scorerId!: string;
+}
+export class RecordMatchResultDto {
+  @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => MatchGoalDto)
+  goals!: MatchGoalDto[];
 }
 export class CreateTournamentDto {
   @IsString() name!: string;

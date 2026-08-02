@@ -16,6 +16,7 @@ import {
   CompeteDto,
   CreateMatchDto,
   BrowseMatchesDto,
+  RecordMatchResultDto,
   CreateTeamDto,
   CreateTournamentDto,
 } from './dto';
@@ -194,6 +195,8 @@ export class MatchesService {
         OR: [
           { organizerId: userId },
           { requests: { some: { challengerId: userId } } },
+          { homeTeam: { members: { some: { footballerId: userId } } } },
+          { awayTeam: { members: { some: { footballerId: userId } } } },
         ],
       },
       include: {
@@ -207,6 +210,63 @@ export class MatchesService {
         },
       },
       orderBy: { startsAt: 'asc' },
+    });
+  }
+  async details(userId: string, id: string) {
+    const match = await this.db.match.findUnique({
+      where: { id },
+      include: {
+        homeTeam: { include: { members: { include: { footballer: { select: { id: true, displayName: true, position: true } } } } } },
+        awayTeam: { include: { members: { include: { footballer: { select: { id: true, displayName: true, position: true } } } } } },
+        goals: { include: { scorer: { select: { id: true, displayName: true } }, team: { select: { id: true, name: true } } }, orderBy: { createdAt: 'asc' } },
+        organizer: { select: { displayName: true } },
+      },
+    });
+    if (!match) throw new NotFoundException('Match not found');
+    const participantIds = [
+      ...match.homeTeam.members.map(member => member.footballerId),
+      ...(match.awayTeam?.members.map(member => member.footballerId) ?? []),
+    ];
+    if (match.organizerId !== userId && !participantIds.includes(userId))
+      throw new ForbiddenException('Only participating teams can view match details');
+    return {
+      ...match,
+      canRecordResult: match.organizerId === userId && !!match.awayTeam && match.startsAt <= new Date(),
+    };
+  }
+  async recordResult(userId: string, id: string, dto: RecordMatchResultDto) {
+    const match = await this.db.match.findUnique({
+      where: { id },
+      include: {
+        homeTeam: { include: { members: true } },
+        awayTeam: { include: { members: true } },
+      },
+    });
+    if (!match) throw new NotFoundException('Match not found');
+    if (match.organizerId !== userId)
+      throw new ForbiddenException('Only the match organizer can record the result');
+    if (!match.awayTeam || !['CONFIRMED', 'COMPLETED'].includes(match.status))
+      throw new BadRequestException('A confirmed opponent is required');
+    if (match.startsAt > new Date())
+      throw new BadRequestException('The result can only be recorded after the match starts');
+    const membersByTeam = new Map([
+      [match.homeTeamId, new Set(match.homeTeam.members.map(member => member.footballerId))],
+      [match.awayTeamId!, new Set(match.awayTeam.members.map(member => member.footballerId))],
+    ]);
+    for (const goal of dto.goals) {
+      if (!membersByTeam.get(goal.teamId)?.has(goal.scorerId))
+        throw new BadRequestException('Every scorer must belong to the selected participating team');
+    }
+    const homeScore = dto.goals.filter(goal => goal.teamId === match.homeTeamId).length;
+    const awayScore = dto.goals.filter(goal => goal.teamId === match.awayTeamId).length;
+    return this.db.$transaction(async tx => {
+      await tx.matchGoal.deleteMany({ where: { matchId: id } });
+      if (dto.goals.length)
+        await tx.matchGoal.createMany({ data: dto.goals.map(goal => ({ ...goal, matchId: id })) });
+      return tx.match.update({
+        where: { id },
+        data: { homeScore, awayScore, status: MatchStatus.COMPLETED },
+      });
     });
   }
   async compete(userId: string, matchId: string, dto: CompeteDto) {

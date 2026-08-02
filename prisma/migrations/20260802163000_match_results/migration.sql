@@ -1,0 +1,17 @@
+ALTER TABLE "Match"
+ADD COLUMN "homeScore" INTEGER,
+ADD COLUMN "awayScore" INTEGER;
+
+CREATE TABLE "MatchGoal" (
+  "id" TEXT NOT NULL,
+  "matchId" TEXT NOT NULL,
+  "teamId" TEXT NOT NULL,
+  "scorerId" TEXT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "MatchGoal_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX "MatchGoal_matchId_idx" ON "MatchGoal"("matchId");
+ALTER TABLE "MatchGoal" ADD CONSTRAINT "MatchGoal_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "MatchGoal" ADD CONSTRAINT "MatchGoal_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "MatchGoal" ADD CONSTRAINT "MatchGoal_scorerId_fkey" FOREIGN KEY ("scorerId") REFERENCES "Footballer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
