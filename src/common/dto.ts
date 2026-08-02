@@ -81,7 +81,10 @@ export class MatchGoalDto {
   @IsString() scorerId!: string;
 }
 export class RecordMatchResultDto {
-  @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => MatchGoalDto)
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => MatchGoalDto)
   goals!: MatchGoalDto[];
 }
 export class CreateTournamentDto {
