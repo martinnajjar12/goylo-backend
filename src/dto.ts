@@ -3,6 +3,8 @@ import {
   IsEmail,
   IsEnum,
   IsInt,
+  IsLatitude,
+  IsLongitude,
   IsOptional,
   IsString,
   IsUrl,
@@ -15,6 +17,7 @@ import {
   InvitationStatus,
   TournamentStatus,
 } from '@prisma/client';
+import { Type } from 'class-transformer';
 export class RegisterDto {
   @IsEmail() email!: string;
   @MinLength(8) password!: string;
@@ -47,10 +50,20 @@ export class CreateMatchDto {
   @IsString() city!: string;
   @IsInt() @Min(3) @Max(11) playersPerTeam!: number;
   @IsOptional() @IsUrl({ require_protocol: true }) mapUrl?: string;
+  @IsOptional() @IsString() placeId?: string;
+  @IsOptional() @IsString() venueAddress?: string;
+  @IsLatitude() latitude!: number;
+  @IsLongitude() longitude!: number;
   @IsDateString() startsAt!: string;
   @IsString() homeTeamId!: string;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() tournamentId?: string;
+}
+export class BrowseMatchesDto {
+  @Type(() => Number) @IsLatitude() latitude!: number;
+  @Type(() => Number) @IsLongitude() longitude!: number;
+  @Type(() => Number) @Min(1) @Max(200) radiusKm!: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) limit?: number;
 }
 export class CompeteDto {
   @IsString() challengerTeamId!: string;

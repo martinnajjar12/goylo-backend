@@ -9,11 +9,13 @@ import {
   CompetitionRequestStatus,
   InvitationStatus,
   MatchStatus,
+  Prisma,
 } from '@prisma/client';
 import { PrismaService } from './prisma.service';
 import {
   CompeteDto,
   CreateMatchDto,
+  BrowseMatchesDto,
   CreateTeamDto,
   CreateTournamentDto,
 } from './dto';
@@ -113,23 +115,62 @@ export class MatchesService {
       include: { homeTeam: true, tournament: true },
     });
   }
-  browse(_userId: string) {
+  async browse(_userId: string, query: BrowseMatchesDto) {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     yesterday.setHours(0, 0, 0, 0);
 
-    return this.db.match.findMany({
-      where: {
-        status: { in: [MatchStatus.OPEN, MatchStatus.CONFIRMED] },
-        startsAt: { gte: yesterday },
-      },
+    // Restrict candidates with an index-friendly bounding box before applying
+    // the exact Haversine distance in PostgreSQL.
+    const latitudeDelta = query.radiusKm / 111.32;
+    const longitudeDelta = Math.min(
+      180,
+      query.radiusKm / (111.32 * Math.max(0.01, Math.cos(query.latitude * Math.PI / 180))),
+    );
+    const latitudeMin = Math.max(-90, query.latitude - latitudeDelta);
+    const latitudeMax = Math.min(90, query.latitude + latitudeDelta);
+    const longitudeMin = query.longitude - longitudeDelta;
+    const longitudeMax = query.longitude + longitudeDelta;
+    const longitudeFilter = longitudeDelta >= 180
+      ? Prisma.empty
+      : longitudeMin < -180
+        ? Prisma.sql`AND ("longitude" >= ${longitudeMin + 360} OR "longitude" <= ${longitudeMax})`
+        : longitudeMax > 180
+          ? Prisma.sql`AND ("longitude" >= ${longitudeMin} OR "longitude" <= ${longitudeMax - 360})`
+          : Prisma.sql`AND "longitude" BETWEEN ${longitudeMin} AND ${longitudeMax}`;
+    const nearest = await this.db.$queryRaw<Array<{ id: string; distanceKm: number }>>(Prisma.sql`
+      WITH candidates AS (
+        SELECT "id", 6371 * 2 * ASIN(LEAST(1, SQRT(
+          POWER(SIN(RADIANS("latitude" - ${query.latitude}) / 2), 2) +
+          COS(RADIANS(${query.latitude})) * COS(RADIANS("latitude")) *
+          POWER(SIN(RADIANS("longitude" - ${query.longitude}) / 2), 2)
+        ))) AS "distanceKm"
+        FROM "Match"
+        WHERE "latitude" BETWEEN ${latitudeMin} AND ${latitudeMax}
+          ${longitudeFilter}
+          AND "status" IN ('OPEN'::"MatchStatus", 'CONFIRMED'::"MatchStatus")
+          AND "startsAt" >= ${yesterday}
+      )
+      SELECT "id", "distanceKm"
+      FROM candidates
+      WHERE "distanceKm" <= ${query.radiusKm}
+      ORDER BY "distanceKm" ASC
+      LIMIT ${query.limit ?? 50}
+    `);
+    if (!nearest.length) return [];
+    const matches = await this.db.match.findMany({
+      where: { id: { in: nearest.map(match => match.id) } },
       include: {
         homeTeam: true,
         awayTeam: true,
         organizer: { select: { displayName: true } },
         _count: { select: { requests: true } },
       },
-      orderBy: { startsAt: 'asc' },
+    });
+    const matchesById = new Map(matches.map(match => [match.id, match]));
+    return nearest.flatMap(({ id, distanceKm }) => {
+      const match = matchesById.get(id);
+      return match ? [{ ...match, distanceKm }] : [];
     });
   }
   mine(userId: string) {
@@ -211,6 +252,40 @@ export class MatchesService {
     const team = await this.db.team.findUnique({ where: { id: teamId } });
     if (!team || team.ownerId !== userId)
       throw new ForbiddenException('You must own this team');
+  }
+}
+
+@Injectable()
+export class GooglePlacesService {
+  private readonly baseUrl = 'https://places.googleapis.com/v1';
+  private get apiKey() {
+    const key = process.env.GOOGLE_PLACES_API_KEY;
+    if (!key) throw new BadRequestException('Google Places is not configured');
+    return key;
+  }
+  async autocomplete(input: string) {
+    const response = await fetch(`${this.baseUrl}/places:autocomplete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': this.apiKey,
+        'X-Goog-FieldMask': 'suggestions.placePrediction.placeId,suggestions.placePrediction.text',
+      },
+      body: JSON.stringify({ input }),
+    });
+    return this.readResponse(response);
+  }
+  async details(placeId: string) {
+    const fields = 'id,displayName,formattedAddress,location,addressComponents,googleMapsUri';
+    const response = await fetch(`${this.baseUrl}/places/${encodeURIComponent(placeId)}?fields=${encodeURIComponent(fields)}`, {
+      headers: { 'X-Goog-Api-Key': this.apiKey },
+    });
+    return this.readResponse(response);
+  }
+  private async readResponse(response: Response) {
+    const body = await response.json() as any;
+    if (!response.ok) throw new BadRequestException(body.error?.message ?? 'Google Places request failed');
+    return body;
   }
 }
 

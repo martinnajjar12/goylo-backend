@@ -102,6 +102,10 @@ model Match {
   city String @default("")
   playersPerTeam Int @default(5)
   mapUrl String?
+  placeId String?
+  venueAddress String?
+  latitude Float?
+  longitude Float?
   startsAt DateTime
   notes String?
   status MatchStatus @default(OPEN)
