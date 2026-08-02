@@ -1,0 +1,147 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TeamRole {
+  OWNER
+  MEMBER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum MatchStatus {
+  OPEN
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum CompetitionRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TournamentStatus {
+  DRAFT
+  OPEN
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+model Footballer {
+  id String @id @default(cuid())
+  email String @unique
+  passwordHash String
+  displayName String
+  position String?
+  city String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  memberships TeamMember[]
+  ownedTeams Team[] @relation("TeamOwner")
+  sentInvitations TeamInvitation[] @relation("InvitationSender")
+  receivedInvitations TeamInvitation[] @relation("InvitationRecipient")
+  organizedMatches Match[] @relation("MatchOrganizer")
+  competitionRequests CompetitionRequest[]
+  tournaments Tournament[] @relation("TournamentOrganizer")
+}
+
+model Team {
+  id String @id @default(cuid())
+  name String
+  city String
+  description String?
+  ownerId String
+  owner Footballer @relation("TeamOwner", fields: [ownerId], references: [id])
+  members TeamMember[]
+  invitations TeamInvitation[]
+  homeMatches Match[] @relation("HomeTeam")
+  awayMatches Match[] @relation("AwayTeam")
+  competitionRequests CompetitionRequest[]
+  createdAt DateTime @default(now())
+}
+
+model TeamMember {
+  teamId String
+  footballerId String
+  role TeamRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  footballer Footballer @relation(fields: [footballerId], references: [id], onDelete: Cascade)
+  @@id([teamId, footballerId])
+}
+
+model TeamInvitation {
+  id String @id @default(cuid())
+  teamId String
+  senderId String
+  recipientId String
+  status InvitationStatus @default(PENDING)
+  createdAt DateTime @default(now())
+  respondedAt DateTime?
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  sender Footballer @relation("InvitationSender", fields: [senderId], references: [id])
+  recipient Footballer @relation("InvitationRecipient", fields: [recipientId], references: [id])
+  @@unique([teamId, recipientId])
+}
+
+model Match {
+  id String @id @default(cuid())
+  venue String
+  city String @default("")
+  playersPerTeam Int @default(5)
+  mapUrl String?
+  startsAt DateTime
+  notes String?
+  status MatchStatus @default(OPEN)
+  organizerId String
+  homeTeamId String
+  awayTeamId String?
+  tournamentId String?
+  organizer Footballer @relation("MatchOrganizer", fields: [organizerId], references: [id])
+  homeTeam Team @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam Team? @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  tournament Tournament? @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
+  requests CompetitionRequest[]
+  createdAt DateTime @default(now())
+}
+
+model CompetitionRequest {
+  id String @id @default(cuid())
+  matchId String
+  challengerId String
+  challengerTeamId String
+  message String?
+  status CompetitionRequestStatus @default(PENDING)
+  createdAt DateTime @default(now())
+  respondedAt DateTime?
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  challenger Footballer @relation(fields: [challengerId], references: [id])
+  challengerTeam Team @relation(fields: [challengerTeamId], references: [id])
+  @@unique([matchId, challengerTeamId])
+}
+
+model Tournament {
+  id String @id @default(cuid())
+  name String
+  description String?
+  city String
+  startsAt DateTime
+  endsAt DateTime
+  status TournamentStatus @default(DRAFT)
+  organizerId String
+  organizer Footballer @relation("TournamentOrganizer", fields: [organizerId], references: [id])
+  matches Match[]
+  createdAt DateTime @default(now())
+}
