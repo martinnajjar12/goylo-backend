@@ -12,6 +12,13 @@ enum TeamRole {
   MEMBER
 }
 
+enum PlayerPosition {
+  GOALKEEPER
+  DEFENDER
+  MIDFIELDER
+  STRIKER
+}
+
 enum InvitationStatus {
   PENDING
   ACCEPTED
@@ -44,7 +51,7 @@ model Footballer {
   email String @unique
   passwordHash String
   displayName String
-  position String?
+  position PlayerPosition?
   city String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

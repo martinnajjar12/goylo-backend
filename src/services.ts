@@ -47,6 +47,21 @@ export class TeamsService {
       include: { _count: { select: { members: true } } },
     });
   }
+  details(userId: string, id: string) {
+    return this.db.team.findFirstOrThrow({
+      where: { id, members: { some: { footballerId: userId } } },
+      include: {
+        members: {
+          orderBy: { joinedAt: 'asc' },
+          include: {
+            footballer: {
+              select: { id: true, displayName: true, position: true },
+            },
+          },
+        },
+      },
+    });
+  }
   async invite(userId: string, teamId: string, email: string) {
     const team = await this.owned(userId, teamId);
     const recipient = await this.db.footballer.findUnique({

@@ -15,6 +15,7 @@ import {
 import {
   CompetitionRequestStatus,
   InvitationStatus,
+  PlayerPosition,
   TournamentStatus,
 } from '@prisma/client';
 import { Type } from 'class-transformer';
@@ -22,7 +23,7 @@ export class RegisterDto {
   @IsEmail() email!: string;
   @MinLength(8) password!: string;
   @IsString() displayName!: string;
-  @IsOptional() @IsString() position?: string;
+  @IsOptional() @IsEnum(PlayerPosition) position?: PlayerPosition;
   @IsOptional() @IsString() city?: string;
 }
 export class LoginDto {
@@ -31,7 +32,7 @@ export class LoginDto {
 }
 export class UpdateProfileDto {
   @IsOptional() @IsString() displayName?: string;
-  @IsOptional() @IsString() position?: string;
+  @IsOptional() @IsEnum(PlayerPosition) position?: PlayerPosition;
   @IsOptional() @IsString() city?: string;
 }
 export class CreateTeamDto {
