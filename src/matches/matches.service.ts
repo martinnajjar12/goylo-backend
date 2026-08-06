@@ -11,6 +11,7 @@ import {
   CompeteDto,
   CreateMatchDto,
   RecordMatchResultDto,
+  UpdateMatchSquadDto,
 } from '../common/dto';
 import { DatabaseService } from '../database/database.service';
 
@@ -26,9 +27,23 @@ export class MatchesService {
       if (!t || t.organizerId !== userId)
         throw new ForbiddenException('You do not own this tournament');
     }
+    const defaultSquad = await this.db.teamSquadPlayer.findMany({
+      where: { teamId: dto.homeTeamId },
+      take: dto.playersPerTeam,
+    });
     return this.db.match.create({
-      data: { ...dto, startsAt: new Date(dto.startsAt), organizerId: userId },
-      include: { homeTeam: true, tournament: true },
+      data: {
+        ...dto,
+        startsAt: new Date(dto.startsAt),
+        organizerId: userId,
+        squads: {
+          create: defaultSquad.map((player) => ({
+            teamId: dto.homeTeamId,
+            footballerId: player.footballerId,
+          })),
+        },
+      },
+      include: { homeTeam: true, tournament: true, squads: true },
     });
   }
   async browse(_userId: string, query: BrowseMatchesDto) {
@@ -84,6 +99,13 @@ export class MatchesService {
         homeTeam: true,
         awayTeam: true,
         organizer: { select: { displayName: true } },
+        squads: {
+          include: {
+            footballer: {
+              select: { id: true, displayName: true, position: true },
+            },
+          },
+        },
         _count: { select: { requests: true } },
       },
     });
@@ -91,6 +113,52 @@ export class MatchesService {
     return nearest.flatMap(({ id, distanceKm }) => {
       const match = matchesById.get(id);
       return match ? [{ ...match, distanceKm }] : [];
+    });
+  }
+  async updateSquad(
+    userId: string,
+    matchId: string,
+    teamId: string,
+    dto: UpdateMatchSquadDto,
+  ) {
+    const match = await this.db.match.findUnique({ where: { id: matchId } });
+    if (!match) throw new NotFoundException('Match not found');
+    if (match.startsAt <= new Date())
+      throw new BadRequestException(
+        'The squad must be selected before kickoff',
+      );
+    if (![match.homeTeamId, match.awayTeamId].includes(teamId))
+      throw new BadRequestException('Team is not playing in this match');
+    await this.assertManager(userId, teamId);
+    const footballerIds = [...new Set(dto.footballerIds)];
+    if (!footballerIds.length || footballerIds.length > match.playersPerTeam)
+      throw new BadRequestException(
+        `Select between 1 and ${match.playersPerTeam} players`,
+      );
+    const members = await this.db.teamMember.count({
+      where: { teamId, footballerId: { in: footballerIds } },
+    });
+    if (members !== footballerIds.length)
+      throw new BadRequestException(
+        'Every selected player must belong to the team',
+      );
+    return this.db.$transaction(async (tx) => {
+      await tx.matchSquadPlayer.deleteMany({ where: { matchId, teamId } });
+      await tx.matchSquadPlayer.createMany({
+        data: footballerIds.map((footballerId) => ({
+          matchId,
+          teamId,
+          footballerId,
+        })),
+      });
+      return tx.matchSquadPlayer.findMany({
+        where: { matchId, teamId },
+        include: {
+          footballer: {
+            select: { id: true, displayName: true, position: true },
+          },
+        },
+      });
     });
   }
   mine(userId: string) {
@@ -163,6 +231,18 @@ export class MatchesService {
       );
     return {
       ...match,
+      manageableTeamIds:
+        match.startsAt > new Date()
+          ? [match.homeTeam, match.awayTeam]
+              .filter((team) =>
+                team?.members.some(
+                  (member) =>
+                    member.footballerId === userId &&
+                    ['CAPTAIN', 'COACH'].includes(member.role),
+                ),
+              )
+              .map((team) => team!.id)
+          : [],
       canRecordResult:
         match.organizerId === userId &&
         !!match.awayTeam &&
@@ -188,6 +268,9 @@ export class MatchesService {
       throw new BadRequestException(
         'The result can only be recorded after the match starts',
       );
+    const selectedSquads = await this.db.matchSquadPlayer.findMany({
+      where: { matchId: id },
+    });
     const membersByTeam = new Map([
       [
         match.homeTeamId,
@@ -198,6 +281,16 @@ export class MatchesService {
         new Set(match.awayTeam.members.map((member) => member.footballerId)),
       ],
     ]);
+    for (const teamId of [match.homeTeamId, match.awayTeamId!]) {
+      const selected = selectedSquads.filter(
+        (player) => player.teamId === teamId,
+      );
+      if (selected.length)
+        membersByTeam.set(
+          teamId,
+          new Set(selected.map((player) => player.footballerId)),
+        );
+    }
     for (const goal of dto.goals) {
       if (!membersByTeam.get(goal.teamId)?.has(goal.scorerId))
         throw new BadRequestException(
@@ -261,6 +354,10 @@ export class MatchesService {
         data: { status, respondedAt: new Date() },
       });
       if (status === 'APPROVED') {
+        const defaultSquad = await tx.teamSquadPlayer.findMany({
+          where: { teamId: request.challengerTeamId },
+          take: match.playersPerTeam,
+        });
         await tx.match.update({
           where: { id: matchId },
           data: {
@@ -268,6 +365,14 @@ export class MatchesService {
             status: MatchStatus.CONFIRMED,
           },
         });
+        if (defaultSquad.length)
+          await tx.matchSquadPlayer.createMany({
+            data: defaultSquad.map((player) => ({
+              matchId,
+              teamId: request.challengerTeamId,
+              footballerId: player.footballerId,
+            })),
+          });
         await tx.competitionRequest.updateMany({
           where: { matchId, id: { not: requestId }, status: 'PENDING' },
           data: { status: 'REJECTED', respondedAt: new Date() },
@@ -280,5 +385,14 @@ export class MatchesService {
     const team = await this.db.team.findUnique({ where: { id: teamId } });
     if (!team || team.ownerId !== userId)
       throw new ForbiddenException('You must own this team');
+  }
+  private async assertManager(userId: string, teamId: string) {
+    const member = await this.db.teamMember.findUnique({
+      where: { teamId_footballerId: { teamId, footballerId: userId } },
+    });
+    if (!member || !['CAPTAIN', 'COACH'].includes(member.role))
+      throw new ForbiddenException(
+        'Only the captain or coach can select the squad',
+      );
   }
 }

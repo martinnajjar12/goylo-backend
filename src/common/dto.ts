@@ -6,6 +6,7 @@ import {
   IsLatitude,
   IsArray,
   IsLongitude,
+  IsNumber,
   IsOptional,
   IsString,
   IsUrl,
@@ -20,6 +21,7 @@ import {
   InvitationStatus,
   PlayerPosition,
   TournamentStatus,
+  TeamRole,
 } from '@prisma/client';
 import { Type } from 'class-transformer';
 export class RegisterDto {
@@ -48,6 +50,27 @@ export class InviteDto {
 }
 export class InvitationDecisionDto {
   @IsEnum(InvitationStatus) status!: InvitationStatus;
+}
+export class UpdateTeamMemberRoleDto {
+  @IsEnum(TeamRole) role!: TeamRole;
+}
+export class UpdateMatchSquadDto {
+  @IsArray()
+  @ArrayMaxSize(11)
+  @IsString({ each: true })
+  footballerIds!: string[];
+}
+export class TeamSquadPlacementDto {
+  @IsString() footballerId!: string;
+  @IsNumber() @Min(0) @Max(100) pitchX!: number;
+  @IsNumber() @Min(0) @Max(100) pitchY!: number;
+}
+export class UpdateTeamSquadDto extends UpdateMatchSquadDto {
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TeamSquadPlacementDto)
+  placements?: TeamSquadPlacementDto[];
 }
 export class CreateMatchDto {
   @IsString() venue!: string;

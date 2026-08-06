@@ -8,7 +8,8 @@ datasource db {
 }
 
 enum TeamRole {
-  OWNER
+  CAPTAIN
+  COACH
   MEMBER
 }
 
@@ -63,6 +64,8 @@ model Footballer {
   competitionRequests CompetitionRequest[]
   tournaments Tournament[] @relation("TournamentOrganizer")
   goals MatchGoal[]
+  matchSquads MatchSquadPlayer[]
+  teamSquads TeamSquadPlayer[]
 }
 
 model Team {
@@ -78,6 +81,8 @@ model Team {
   awayMatches Match[] @relation("AwayTeam")
   competitionRequests CompetitionRequest[]
   goals MatchGoal[]
+  matchSquads MatchSquadPlayer[]
+  squad TeamSquadPlayer[]
   createdAt DateTime @default(now())
 }
 
@@ -130,7 +135,31 @@ model Match {
   tournament Tournament? @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
   requests CompetitionRequest[]
   goals MatchGoal[]
+  squads MatchSquadPlayer[]
   createdAt DateTime @default(now())
+}
+
+model MatchSquadPlayer {
+  matchId String
+  teamId String
+  footballerId String
+  selectedAt DateTime @default(now())
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  footballer Footballer @relation(fields: [footballerId], references: [id], onDelete: Cascade)
+  @@id([matchId, teamId, footballerId])
+  @@index([matchId, teamId])
+}
+
+model TeamSquadPlayer {
+  teamId String
+  footballerId String
+  pitchX Float?
+  pitchY Float?
+  selectedAt DateTime @default(now())
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  footballer Footballer @relation(fields: [footballerId], references: [id], onDelete: Cascade)
+  @@id([teamId, footballerId])
 }
 
 model MatchGoal {

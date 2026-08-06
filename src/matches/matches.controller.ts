@@ -14,6 +14,7 @@ import {
   CompeteDto,
   CreateMatchDto,
   RecordMatchResultDto,
+  UpdateMatchSquadDto,
 } from '../common/dto';
 import { MatchesService } from './matches.service';
 
@@ -42,6 +43,14 @@ export class MatchesController {
     @Body() dto: RecordMatchResultDto,
   ) {
     return this.matchesService.recordResult(user.id, id, dto);
+  }
+  @Patch(':id/squads/:teamId') squad(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('teamId') teamId: string,
+    @Body() dto: UpdateMatchSquadDto,
+  ) {
+    return this.matchesService.updateSquad(user.id, id, teamId, dto);
   }
   @Post(':id/requests') compete(
     @CurrentUser() user: AuthUser,
