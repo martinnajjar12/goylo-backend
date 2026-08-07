@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { DatabaseModule } from './database/database.module';
 import { FootballersModule } from './footballers/footballers.module';
 import { MatchesModule } from './matches/matches.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { PlacesModule } from './places/places.module';
 import { TeamsModule } from './teams/teams.module';
 import { TournamentsModule } from './tournaments/tournaments.module';
@@ -24,6 +25,7 @@ import { TournamentsModule } from './tournaments/tournaments.module';
     FootballersModule,
     TeamsModule,
     MatchesModule,
+    NotificationsModule,
     PlacesModule,
     TournamentsModule,
   ],

@@ -192,12 +192,6 @@ export class MatchesService {
       include: {
         homeTeam: true,
         awayTeam: true,
-        requests: {
-          include: {
-            challengerTeam: true,
-            challenger: { select: { displayName: true } },
-          },
-        },
       },
       orderBy: { startsAt: 'asc' },
     });
