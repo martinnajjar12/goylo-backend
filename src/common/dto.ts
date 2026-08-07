@@ -54,24 +54,24 @@ export class InvitationDecisionDto {
 export class UpdateTeamMemberRoleDto {
   @IsEnum(TeamRole) role!: TeamRole;
 }
-export class UpdateMatchSquadDto {
-  @IsArray()
-  @ArrayMaxSize(11)
-  @IsString({ each: true })
-  footballerIds!: string[];
-}
 export class TeamSquadPlacementDto {
   @IsString() footballerId!: string;
   @IsNumber() @Min(0) @Max(100) pitchX!: number;
   @IsNumber() @Min(0) @Max(100) pitchY!: number;
 }
-export class UpdateTeamSquadDto extends UpdateMatchSquadDto {
+export class UpdateMatchSquadDto {
+  @IsArray()
+  @ArrayMaxSize(11)
+  @IsString({ each: true })
+  footballerIds!: string[];
+
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => TeamSquadPlacementDto)
   placements?: TeamSquadPlacementDto[];
 }
+export class UpdateTeamSquadDto extends UpdateMatchSquadDto {}
 export class CreateMatchDto {
   @IsString() venue!: string;
   @IsString() city!: string;

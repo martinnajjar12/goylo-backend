@@ -40,6 +40,8 @@ export class MatchesService {
           create: defaultSquad.map((player) => ({
             teamId: dto.homeTeamId,
             footballerId: player.footballerId,
+            pitchX: player.pitchX,
+            pitchY: player.pitchY,
           })),
         },
       },
@@ -142,6 +144,20 @@ export class MatchesService {
       throw new BadRequestException(
         'Every selected player must belong to the team',
       );
+    const placements = new Map(
+      (dto.placements ?? []).map((placement) => [
+        placement.footballerId,
+        placement,
+      ]),
+    );
+    if (
+      dto.placements?.some(
+        (placement) => !footballerIds.includes(placement.footballerId),
+      )
+    )
+      throw new BadRequestException(
+        'Only selected squad players can be placed',
+      );
     return this.db.$transaction(async (tx) => {
       await tx.matchSquadPlayer.deleteMany({ where: { matchId, teamId } });
       await tx.matchSquadPlayer.createMany({
@@ -149,6 +165,8 @@ export class MatchesService {
           matchId,
           teamId,
           footballerId,
+          pitchX: placements.get(footballerId)?.pitchX,
+          pitchY: placements.get(footballerId)?.pitchY,
         })),
       });
       return tx.matchSquadPlayer.findMany({
@@ -190,6 +208,7 @@ export class MatchesService {
       include: {
         homeTeam: {
           include: {
+            squad: true,
             members: {
               include: {
                 footballer: {
@@ -201,6 +220,7 @@ export class MatchesService {
         },
         awayTeam: {
           include: {
+            squad: true,
             members: {
               include: {
                 footballer: {
@@ -210,6 +230,7 @@ export class MatchesService {
             },
           },
         },
+        squads: true,
         goals: {
           include: {
             scorer: { select: { id: true, displayName: true } },
@@ -225,9 +246,16 @@ export class MatchesService {
       ...match.homeTeam.members.map((member) => member.footballerId),
       ...(match.awayTeam?.members.map((member) => member.footballerId) ?? []),
     ];
-    if (match.organizerId !== userId && !participantIds.includes(userId))
+    const isDiscoverable =
+      ['OPEN', 'CONFIRMED'].includes(match.status) &&
+      match.startsAt >= new Date(new Date().setHours(0, 0, 0, 0) - 86400000);
+    if (
+      match.organizerId !== userId &&
+      !participantIds.includes(userId) &&
+      !isDiscoverable
+    )
       throw new ForbiddenException(
-        'Only participating teams can view match details',
+        'Only participating teams can view these match details',
       );
     return {
       ...match,
