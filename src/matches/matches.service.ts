@@ -19,7 +19,7 @@ import { DatabaseService } from '../database/database.service';
 export class MatchesService {
   constructor(private readonly db: DatabaseService) {}
   async create(userId: string, dto: CreateMatchDto) {
-    await this.assertOwner(userId, dto.homeTeamId);
+    await this.assertCaptainOrOwner(userId, dto.homeTeamId);
     if (dto.tournamentId) {
       const t = await this.db.tournament.findUnique({
         where: { id: dto.tournamentId },
@@ -31,17 +31,58 @@ export class MatchesService {
       where: { teamId: dto.homeTeamId },
       take: dto.playersPerTeam,
     });
+    const selectedIds = dto.footballerIds
+      ? [...new Set(dto.footballerIds)]
+      : defaultSquad.map((player) => player.footballerId);
+    if (!selectedIds.length || selectedIds.length > dto.playersPerTeam)
+      throw new BadRequestException(
+        `Select between 1 and ${dto.playersPerTeam} players`,
+      );
+    const memberCount = await this.db.teamMember.count({
+      where: {
+        teamId: dto.homeTeamId,
+        footballerId: { in: selectedIds },
+      },
+    });
+    if (memberCount !== selectedIds.length)
+      throw new BadRequestException(
+        'Every selected player must belong to the team',
+      );
+    const placements = new Map(
+      (dto.placements ?? []).map((placement) => [
+        placement.footballerId,
+        placement,
+      ]),
+    );
+    if (
+      dto.placements?.some(
+        (placement) => !selectedIds.includes(placement.footballerId),
+      )
+    )
+      throw new BadRequestException(
+        'Only selected squad players can be placed',
+      );
+    const defaults = new Map(
+      defaultSquad.map((player) => [player.footballerId, player]),
+    );
+    const match = { ...dto };
+    delete match.footballerIds;
+    delete match.placements;
     return this.db.match.create({
       data: {
-        ...dto,
+        ...match,
         startsAt: new Date(dto.startsAt),
         organizerId: userId,
         squads: {
-          create: defaultSquad.map((player) => ({
+          create: selectedIds.map((footballerId) => ({
             teamId: dto.homeTeamId,
-            footballerId: player.footballerId,
-            pitchX: player.pitchX,
-            pitchY: player.pitchY,
+            footballerId,
+            pitchX:
+              placements.get(footballerId)?.pitchX ??
+              defaults.get(footballerId)?.pitchX,
+            pitchY:
+              placements.get(footballerId)?.pitchY ??
+              defaults.get(footballerId)?.pitchY,
           })),
         },
       },
@@ -393,6 +434,8 @@ export class MatchesService {
               matchId,
               teamId: request.challengerTeamId,
               footballerId: player.footballerId,
+              pitchX: player.pitchX,
+              pitchY: player.pitchY,
             })),
           });
         await tx.competitionRequest.updateMany({
@@ -409,12 +452,29 @@ export class MatchesService {
       throw new ForbiddenException('You must own this team');
   }
   private async assertManager(userId: string, teamId: string) {
-    const member = await this.db.teamMember.findUnique({
-      where: { teamId_footballerId: { teamId, footballerId: userId } },
+    const team = await this.db.team.findUnique({
+      where: { id: teamId },
+      include: { members: { where: { footballerId: userId } } },
     });
-    if (!member || !['CAPTAIN', 'COACH'].includes(member.role))
+    if (
+      !team ||
+      (team.ownerId !== userId && team.members[0]?.role !== 'CAPTAIN')
+    )
       throw new ForbiddenException(
-        'Only the captain or coach can select the squad',
+        'Only the team owner or captain can select the squad',
+      );
+  }
+  private async assertCaptainOrOwner(userId: string, teamId: string) {
+    const team = await this.db.team.findUnique({
+      where: { id: teamId },
+      include: { members: { where: { footballerId: userId } } },
+    });
+    if (
+      !team ||
+      (team.ownerId !== userId && team.members[0]?.role !== 'CAPTAIN')
+    )
+      throw new ForbiddenException(
+        'Only the team owner or captain can create a match',
       );
   }
 }

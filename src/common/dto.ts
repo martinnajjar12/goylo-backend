@@ -85,6 +85,16 @@ export class CreateMatchDto {
   @IsString() homeTeamId!: string;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsString() tournamentId?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(11)
+  @IsString({ each: true })
+  footballerIds?: string[];
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TeamSquadPlacementDto)
+  placements?: TeamSquadPlacementDto[];
 }
 export class BrowseMatchesDto {
   @Type(() => Number) @IsLatitude() latitude!: number;

@@ -58,7 +58,7 @@ export class TeamsService {
     return {
       ...team,
       myRole,
-      canManage: myRole === 'CAPTAIN' || myRole === 'COACH',
+      canManage: team.ownerId === userId || myRole === 'CAPTAIN',
     };
   }
   async invite(userId: string, teamId: string, email: string) {
@@ -168,7 +168,7 @@ export class TeamsService {
     selectedIds: string[],
     placements: TeamSquadPlacementDto[] = [],
   ) {
-    await this.managed(userId, teamId);
+    await this.assertCaptainOrOwner(userId, teamId);
     const footballerIds = [...new Set(selectedIds)];
     if (!footballerIds.length)
       throw new BadRequestException('Select at least one squad player');
@@ -213,5 +213,18 @@ export class TeamsService {
     if (!member || !['CAPTAIN', 'COACH'].includes(member.role))
       throw new ForbiddenException('Only the captain or coach can do this');
     return member;
+  }
+  private async assertCaptainOrOwner(userId: string, teamId: string) {
+    const team = await this.db.team.findUnique({
+      where: { id: teamId },
+      include: { members: { where: { footballerId: userId } } },
+    });
+    if (
+      !team ||
+      (team.ownerId !== userId && team.members[0]?.role !== 'CAPTAIN')
+    )
+      throw new ForbiddenException(
+        'Only the team owner or captain can set the default squad',
+      );
   }
 }
